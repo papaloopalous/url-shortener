@@ -27,6 +27,10 @@ go.work.sum
 # env file
 .env
 
+go.sum
+*.pb.go
+mocks.go
+
 # Editor/IDE
 # .idea/
 # .vscode/
