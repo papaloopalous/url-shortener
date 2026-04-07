@@ -17,15 +17,15 @@ func NewTokenCacheAdapter(rdb *redis.Client) *TokenCacheAdapter {
 	return &TokenCacheAdapter{rdb: rdb}
 }
 
-func (a *TokenCacheAdapter) RevokeJTI(jti string, ttl time.Duration) error {
-	if err := a.rdb.Set(context.Background(), keyPrefix+jti, 1, ttl).Err(); err != nil {
+func (a *TokenCacheAdapter) RevokeJTI(ctx context.Context, jti string, ttl time.Duration) error {
+	if err := a.rdb.Set(ctx, keyPrefix+jti, 1, ttl).Err(); err != nil {
 		return fmt.Errorf("redis set revoked jti: %w", err)
 	}
 	return nil
 }
 
-func (a *TokenCacheAdapter) IsRevoked(jti string) (bool, error) {
-	err := a.rdb.Get(context.Background(), keyPrefix+jti).Err()
+func (a *TokenCacheAdapter) IsRevoked(ctx context.Context, jti string) (bool, error) {
+	err := a.rdb.Get(ctx, keyPrefix+jti).Err()
 	if errors.Is(err, redis.Nil) {
 		return false, nil
 	}

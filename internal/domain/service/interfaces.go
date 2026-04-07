@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	"auth-service/internal/domain/entity"
@@ -9,22 +10,22 @@ import (
 )
 
 type UserRepository interface {
-	Create(user *entity.User) error
-	FindByEmail(email string) (*entity.User, error)
-	FindByID(id uuid.UUID) (*entity.User, error)
+	Create(ctx context.Context, user *entity.User) error
+	FindByEmail(ctx context.Context, email string) (*entity.User, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 }
 
 type SessionRepository interface {
-	Create(session *entity.RefreshSession) error
-	FindByTokenHash(hash string) (*entity.RefreshSession, error)
-	RevokeByID(id uuid.UUID) error
-	RevokeAllByUserID(userID uuid.UUID) error
-	DeleteExpired() (int64, error)
+	Create(ctx context.Context, session *entity.RefreshSession) error
+	FindByTokenHash(ctx context.Context, hash string) (*entity.RefreshSession, error)
+	RevokeByID(ctx context.Context, id uuid.UUID) error
+	RevokeAllByUserID(ctx context.Context, userID uuid.UUID) error
+	DeleteExpired(ctx context.Context) (int64, error)
 }
 
 type TokenCache interface {
-	RevokeJTI(jti string, ttl time.Duration) error
-	IsRevoked(jti string) (bool, error)
+	RevokeJTI(ctx context.Context, jti string, ttl time.Duration) error
+	IsRevoked(ctx context.Context, jti string) (bool, error)
 }
 
 type TokenManager interface {

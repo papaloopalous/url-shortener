@@ -19,22 +19,18 @@ import (
 
 var tracer = tracing.Tracer("usecase/auth")
 
-type JWTManager struct {
-	secret string
-}
+type JWTManager struct{ secret string }
 
-func NewJWTManager(secret string) *JWTManager {
-	return &JWTManager{secret: secret}
-}
+func NewJWTManager(secret string) *JWTManager { return &JWTManager{secret: secret} }
 
-type claims struct {
+type jwtClaims struct {
 	UserID string `json:"uid"`
 	jwt.RegisteredClaims
 }
 
 func (m *JWTManager) GenerateAccess(userID string, ttl time.Duration) (string, string, error) {
 	jti := uuid.New().String()
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims{
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwtClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        jti,
@@ -50,7 +46,7 @@ func (m *JWTManager) GenerateAccess(userID string, ttl time.Duration) (string, s
 }
 
 func (m *JWTManager) VerifyAccess(tokenStr string) (string, string, error) {
-	tok, err := jwt.ParseWithClaims(tokenStr, &claims{}, func(t *jwt.Token) (any, error) {
+	tok, err := jwt.ParseWithClaims(tokenStr, &jwtClaims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
@@ -59,7 +55,7 @@ func (m *JWTManager) VerifyAccess(tokenStr string) (string, string, error) {
 	if err != nil || !tok.Valid {
 		return "", "", entity.ErrInvalidPassword
 	}
-	c, ok := tok.Claims.(*claims)
+	c, ok := tok.Claims.(*jwtClaims)
 	if !ok {
 		return "", "", fmt.Errorf("unexpected claims type")
 	}
@@ -95,12 +91,12 @@ func NewAuthUsecase(
 	}
 }
 
-func (uc *AuthUsecase) Register(inp RegisterInput, ua, ip string) (*TokenPair, error) {
-	ctx, span := tracer.Start(context.Background(), "AuthUsecase.Register")
+func (uc *AuthUsecase) Register(ctx context.Context, inp RegisterInput, ua, ip string) (*TokenPair, error) {
+	ctx, span := tracer.Start(ctx, "AuthUsecase.Register")
 	defer span.End()
 	span.SetAttributes(attribute.String("user.email", inp.Email))
 
-	if _, err := uc.users.FindByEmail(inp.Email); err == nil {
+	if _, err := uc.users.FindByEmail(ctx, inp.Email); err == nil {
 		span.SetStatus(codes.Error, "duplicate email")
 		metrics.IncEvent("register_duplicate")
 		return nil, entity.ErrUserAlreadyExists
@@ -119,7 +115,7 @@ func (uc *AuthUsecase) Register(inp RegisterInput, ua, ip string) (*TokenPair, e
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
-	if err := uc.users.Create(user); err != nil {
+	if err := uc.users.Create(ctx, user); err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -135,14 +131,13 @@ func (uc *AuthUsecase) Register(inp RegisterInput, ua, ip string) (*TokenPair, e
 	return pair, nil
 }
 
-func (uc *AuthUsecase) Login(inp LoginInput, ua, ip string) (*TokenPair, error) {
-	ctx, span := tracer.Start(context.Background(), "AuthUsecase.Login")
+func (uc *AuthUsecase) Login(ctx context.Context, inp LoginInput, ua, ip string) (*TokenPair, error) {
+	ctx, span := tracer.Start(ctx, "AuthUsecase.Login")
 	defer span.End()
 	span.SetAttributes(attribute.String("user.email", inp.Email))
 
-	user, err := uc.users.FindByEmail(inp.Email)
+	user, err := uc.users.FindByEmail(ctx, inp.Email)
 	if err != nil {
-		// Return generic error to prevent user enumeration.
 		metrics.IncEvent("login_fail")
 		return nil, entity.ErrInvalidPassword
 	}
@@ -164,8 +159,8 @@ func (uc *AuthUsecase) Login(inp LoginInput, ua, ip string) (*TokenPair, error) 
 	return pair, nil
 }
 
-func (uc *AuthUsecase) Refresh(rawToken, ua, ip string) (*TokenPair, error) {
-	ctx, span := tracer.Start(context.Background(), "AuthUsecase.Refresh")
+func (uc *AuthUsecase) Refresh(ctx context.Context, rawToken, ua, ip string) (*TokenPair, error) {
+	ctx, span := tracer.Start(ctx, "AuthUsecase.Refresh")
 	defer span.End()
 
 	hash, err := uc.hashToken(rawToken)
@@ -173,7 +168,7 @@ func (uc *AuthUsecase) Refresh(rawToken, ua, ip string) (*TokenPair, error) {
 		return nil, fmt.Errorf("hash token: %w", err)
 	}
 
-	session, err := uc.sessions.FindByTokenHash(hash)
+	session, err := uc.sessions.FindByTokenHash(ctx, hash)
 	if err != nil {
 		return nil, entity.ErrSessionNotFound
 	}
@@ -184,7 +179,7 @@ func (uc *AuthUsecase) Refresh(rawToken, ua, ip string) (*TokenPair, error) {
 	)
 
 	if session.IsRevoked() {
-		_ = uc.sessions.RevokeAllByUserID(session.UserID)
+		_ = uc.sessions.RevokeAllByUserID(ctx, session.UserID)
 		span.SetStatus(codes.Error, "token reuse")
 		metrics.IncEvent("token_reuse")
 		return nil, entity.ErrTokenReuse
@@ -194,7 +189,7 @@ func (uc *AuthUsecase) Refresh(rawToken, ua, ip string) (*TokenPair, error) {
 		return nil, err
 	}
 
-	if err := uc.sessions.RevokeByID(session.ID); err != nil {
+	if err := uc.sessions.RevokeByID(ctx, session.ID); err != nil {
 		return nil, fmt.Errorf("revoke old session: %w", err)
 	}
 
@@ -209,8 +204,8 @@ func (uc *AuthUsecase) Refresh(rawToken, ua, ip string) (*TokenPair, error) {
 	return pair, nil
 }
 
-func (uc *AuthUsecase) Logout(rawToken, jti string, accessTTLLeft time.Duration) error {
-	_, span := tracer.Start(context.Background(), "AuthUsecase.Logout")
+func (uc *AuthUsecase) Logout(ctx context.Context, rawToken, jti string, accessTTLLeft time.Duration) error {
+	_, span := tracer.Start(ctx, "AuthUsecase.Logout")
 	defer span.End()
 
 	hash, err := uc.hashToken(rawToken)
@@ -218,12 +213,12 @@ func (uc *AuthUsecase) Logout(rawToken, jti string, accessTTLLeft time.Duration)
 		return fmt.Errorf("hash token: %w", err)
 	}
 
-	if session, err := uc.sessions.FindByTokenHash(hash); err == nil {
-		_ = uc.sessions.RevokeByID(session.ID)
+	if session, err := uc.sessions.FindByTokenHash(ctx, hash); err == nil {
+		_ = uc.sessions.RevokeByID(ctx, session.ID)
 	}
 
 	if jti != "" && accessTTLLeft > 0 {
-		if err := uc.cache.RevokeJTI(jti, accessTTLLeft); err != nil {
+		if err := uc.cache.RevokeJTI(ctx, jti, accessTTLLeft); err != nil {
 			return fmt.Errorf("revoke jti: %w", err)
 		}
 	}
@@ -257,7 +252,7 @@ func (uc *AuthUsecase) issueTokenPair(ctx context.Context, userID uuid.UUID, ua,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(uc.refreshTTL),
 	}
-	if err := uc.sessions.Create(session); err != nil {
+	if err := uc.sessions.Create(ctx, session); err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 
