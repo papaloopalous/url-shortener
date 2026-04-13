@@ -10,6 +10,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const (
+	EventURLCreated      = "url_created"
+	EventURLRedirected   = "url_redirected"
+	EventURLDeleted      = "url_deleted"
+	EventCacheHit        = "cache_hit"
+	EventCacheMiss       = "cache_miss"
+	EventOutboxPublished = "outbox_published"
+	EventOutboxFailed    = "outbox_failed"
+)
+
 var (
 	httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "shortener",
@@ -26,26 +36,17 @@ var (
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
-	grpcRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "shortener",
-		Subsystem: "grpc",
-		Name:      "requests_total",
-		Help:      "Total gRPC calls partitioned by method and gRPC status code.",
-	}, []string{"method", "code"})
-
-	grpcRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "shortener",
-		Subsystem: "grpc",
-		Name:      "request_duration_seconds",
-		Help:      "gRPC call latency.",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{"method"})
-
 	shortenerEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "shortener",
 		Name:      "events_total",
 		Help:      "Business-level shortener events.",
 	}, []string{"event"})
+
+	outboxPending = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "shortener",
+		Name:      "outbox_pending_total",
+		Help:      "Current number of pending outbox events.",
+	})
 )
 
 func HTTPMiddleware(next http.Handler) http.Handler {
@@ -60,13 +61,12 @@ func HTTPMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func RecordGRPC(method, code string, d time.Duration) {
-	grpcRequestsTotal.WithLabelValues(method, code).Inc()
-	grpcRequestDuration.WithLabelValues(method).Observe(d.Seconds())
-}
-
 func IncEvent(event string) {
 	shortenerEvents.WithLabelValues(event).Inc()
+}
+
+func SetOutboxPending(n float64) {
+	outboxPending.Set(n)
 }
 
 func Handler() http.Handler {
