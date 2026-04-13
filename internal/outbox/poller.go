@@ -80,7 +80,7 @@ func (p *Poller) poll(ctx context.Context) error {
 	}
 
 	span.SetAttributes(attribute.Int("outbox.batch_size", len(events)))
-	metrics.OutboxPendingTotal.Set(float64(len(events)))
+	metrics.SetOutboxPending(float64(len(events)))
 
 	var publishedIDs []uuid.UUID
 
@@ -94,12 +94,12 @@ func (p *Poller) poll(ctx context.Context) error {
 				"event_type", event.EventType,
 				"error", pubErr,
 			)
-			metrics.EventsTotal.WithLabelValues(metrics.EventOutboxFailed).Inc()
+			metrics.IncEvent(metrics.EventOutboxFailed)
 			continue
 		}
 
 		publishedIDs = append(publishedIDs, event.ID)
-		metrics.EventsTotal.WithLabelValues(metrics.EventOutboxPublished).Inc()
+		metrics.IncEvent(metrics.EventOutboxPublished)
 	}
 
 	span.SetAttributes(attribute.Int("outbox.published", len(publishedIDs)))

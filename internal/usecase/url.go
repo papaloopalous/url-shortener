@@ -123,7 +123,7 @@ func (uc *URLUsecase) Create(ctx context.Context, in CreateInput) (CreateOutput,
 		uc.log.WarnContext(ctx, "cache set failed (best-effort)", "error", err)
 	}
 
-	metrics.EventsTotal.WithLabelValues(metrics.EventURLCreated).Inc()
+	metrics.IncEvent(metrics.EventURLCreated)
 
 	return CreateOutput{
 		ShortCode: url.ShortCode,
@@ -143,10 +143,10 @@ func (uc *URLUsecase) Redirect(ctx context.Context, in RedirectInput) (string, e
 	url, err := uc.cache.Get(ctx, in.Code)
 	if err == nil {
 		span.SetAttributes(attribute.Bool("url.cache_hit", true))
-		metrics.EventsTotal.WithLabelValues(metrics.EventCacheHit).Inc()
+		metrics.IncEvent(metrics.EventCacheHit)
 	} else {
 		span.SetAttributes(attribute.Bool("url.cache_hit", false))
-		metrics.EventsTotal.WithLabelValues(metrics.EventCacheMiss).Inc()
+		metrics.IncEvent(metrics.EventCacheMiss)
 
 		url, err = uc.urls.FindByCode(ctx, in.Code)
 		if err != nil {
@@ -183,13 +183,13 @@ func (uc *URLUsecase) Redirect(ctx context.Context, in RedirectInput) (string, e
 			Status:    entity.OutboxStatusPending,
 			CreatedAt: time.Now(),
 		}
-		// используем Background т.к. горутина живёт дольше запроса
+		// используем Background т.к. горутина живёт дольше запроса.
 		if appendErr := uc.outbox.AppendEvent(context.Background(), event); appendErr != nil {
 			uc.log.Warn("append click event failed (best-effort)", "error", appendErr)
 		}
 	}()
 
-	metrics.EventsTotal.WithLabelValues(metrics.EventURLRedirected).Inc()
+	metrics.IncEvent(metrics.EventURLRedirected)
 	return url.LongURL, nil
 }
 
@@ -244,7 +244,7 @@ func (uc *URLUsecase) BatchDelete(ctx context.Context, in BatchDeleteInput) (int
 		}
 	}()
 
-	metrics.EventsTotal.WithLabelValues(metrics.EventURLDeleted).Inc()
+	metrics.IncEvent(metrics.EventURLDeleted)
 	return n, nil
 }
 

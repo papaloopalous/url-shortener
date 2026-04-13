@@ -5,10 +5,10 @@ import (
 	"net/http"
 
 	"shortener-service/internal/domain/service"
+	"shortener-service/pkg/metrics"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewRouter(handler *URLHandler, authClient service.AuthClient, log *slog.Logger) http.Handler {
@@ -16,13 +16,13 @@ func NewRouter(handler *URLHandler, authClient service.AuthClient, log *slog.Log
 
 	r.Use(RecoveryMiddleware(log))
 	r.Use(TracingMiddleware)
-	r.Use(MetricsMiddleware)
+	r.Use(metrics.HTTPMiddleware)
 	r.Use(RequestIDMiddleware)
 	r.Use(LoggerMiddleware(log))
 	r.Use(chimiddleware.Compress(5))
 
 	r.Get("/healthz", Healthz)
-	r.Handle("/metrics", promhttp.Handler())
+	r.Handle("/metrics", metrics.Handler())
 	r.Get("/{code}", handler.Redirect)
 
 	r.Group(func(r chi.Router) {

@@ -4,12 +4,9 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
-	"strconv"
 	"strings"
-	"time"
 
 	"shortener-service/internal/domain/service"
-	"shortener-service/pkg/metrics"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -52,31 +49,6 @@ func TracingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-type responseWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (rw *responseWriter) WriteHeader(status int) {
-	rw.status = status
-	rw.ResponseWriter.WriteHeader(status)
-}
-
-func MetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
-
-		next.ServeHTTP(rw, r)
-
-		duration := time.Since(start).Seconds()
-		statusStr := strconv.Itoa(rw.status)
-
-		metrics.HTTPRequestsTotal.WithLabelValues(r.Method, r.URL.Path, statusStr).Inc()
-		metrics.HTTPRequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(duration)
-	})
-}
-
 func RequestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqID := r.Header.Get("X-Request-ID")
@@ -91,16 +63,12 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 func LoggerMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
 			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
-
 			next.ServeHTTP(rw, r)
-
 			log.InfoContext(r.Context(), "http request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", rw.status,
-				"duration_ms", time.Since(start).Milliseconds(),
 				"remote_addr", r.RemoteAddr,
 			)
 		})
@@ -144,4 +112,14 @@ func JWTAuthMiddleware(authClient service.AuthClient) func(http.Handler) http.Ha
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(status int) {
+	rw.status = status
+	rw.ResponseWriter.WriteHeader(status)
 }
