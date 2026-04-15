@@ -1,0 +1,83 @@
+package http
+
+import (
+	"log/slog"
+	"net/http"
+	"runtime/debug"
+
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+)
+
+func RecoveryMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					log.ErrorContext(r.Context(), "panic recovered",
+						"panic", rec,
+						"stack", string(debug.Stack()),
+					)
+					http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func TracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		propagator := otel.GetTextMapPropagator()
+		ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+		tracer := otel.Tracer("controller/http")
+		ctx, span := tracer.Start(ctx, r.Method+" "+r.URL.Path)
+		defer span.End()
+
+		span.SetAttributes(
+			attribute.String("http.method", r.Method),
+			attribute.String("http.path", r.URL.Path),
+		)
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func RequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := r.Header.Get("X-Request-ID")
+		if reqID == "" {
+			reqID = uuid.New().String()
+		}
+		w.Header().Set("X-Request-ID", reqID)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func LoggerMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rw, r)
+			log.InfoContext(r.Context(), "http request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", rw.status,
+				"remote_addr", r.RemoteAddr,
+			)
+		})
+	}
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(status int) {
+	rw.status = status
+	rw.ResponseWriter.WriteHeader(status)
+}
