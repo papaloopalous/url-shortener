@@ -64,6 +64,7 @@ func (p *Pool) Run(ctx context.Context) {
 	sem := make(chan struct{}, p.concurrency)
 	var wg sync.WaitGroup
 
+loop:
 	for {
 		msg, err := p.consumer.FetchMessage(ctx)
 		if err != nil {
@@ -77,7 +78,7 @@ func (p *Pool) Run(ctx context.Context) {
 		select {
 		case sem <- struct{}{}:
 		case <-ctx.Done():
-			break
+			break loop
 		}
 
 		metrics.WorkerActive(1)
