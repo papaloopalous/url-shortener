@@ -10,42 +10,41 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const (
+	EventClickProcessed = "click_processed"
+	EventClickDuplicate = "click_duplicate"
+	EventClickFailed    = "click_failed"
+	EventCacheHit       = "cache_hit"
+	EventCacheMiss      = "cache_miss"
+)
+
 var (
 	httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "auth",
+		Namespace: "analytics",
 		Subsystem: "http",
 		Name:      "requests_total",
 		Help:      "Total HTTP requests partitioned by method, path and status.",
 	}, []string{"method", "path", "status"})
 
 	httpRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "auth",
+		Namespace: "analytics",
 		Subsystem: "http",
 		Name:      "request_duration_seconds",
 		Help:      "HTTP request latency.",
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
-	grpcRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "auth",
-		Subsystem: "grpc",
-		Name:      "requests_total",
-		Help:      "Total gRPC calls partitioned by method and gRPC status code.",
-	}, []string{"method", "code"})
-
-	grpcRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "auth",
-		Subsystem: "grpc",
-		Name:      "request_duration_seconds",
-		Help:      "gRPC call latency.",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{"method"})
-
-	authEvents = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "auth",
+	analyticsEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "analytics",
 		Name:      "events_total",
-		Help:      "Business-level auth events.",
+		Help:      "Business-level analytics events.",
 	}, []string{"event"})
+
+	workerActive = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "analytics",
+		Name:      "worker_active",
+		Help:      "Number of currently active worker goroutines.",
+	})
 )
 
 func HTTPMiddleware(next http.Handler) http.Handler {
@@ -60,13 +59,12 @@ func HTTPMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func RecordGRPC(method, code string, d time.Duration) {
-	grpcRequestsTotal.WithLabelValues(method, code).Inc()
-	grpcRequestDuration.WithLabelValues(method).Observe(d.Seconds())
+func IncEvent(event string) {
+	analyticsEvents.WithLabelValues(event).Inc()
 }
 
-func IncEvent(event string) {
-	authEvents.WithLabelValues(event).Inc()
+func WorkerActive(delta float64) {
+	workerActive.Add(delta)
 }
 
 func Handler() http.Handler {
