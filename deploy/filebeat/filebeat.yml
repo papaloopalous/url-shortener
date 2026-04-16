@@ -1,0 +1,21 @@
+filebeat.inputs:
+  - type: container
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+      - decode_json_fields:
+          fields: ["message"]
+          target: ""
+          overwrite_keys: true
+
+processors:
+  - drop_fields:
+      fields: ["agent", "ecs", "host", "input"]
+      ignore_missing: true
+
+output.logstash:
+  hosts: ["logstash:5044"]
+
+logging.level: warning
