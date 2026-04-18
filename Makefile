@@ -1,9 +1,9 @@
-BINARY       := shortener-service
-DOCKER_IMAGE := yourname/shortener-service
+BINARY       := gateway-service
+DOCKER_IMAGE := papaloopalous/gateway-service
 DOCKER_TAG   ?= latest
 PROTO_SRC    := proto/auth/auth.proto
 
-.PHONY: build run test test-integration test-coverage lint fmt mock migrate-up migrate-down docker-build clean proto
+.PHONY: build run test test-integration test-coverage lint fmt docker-build clean proto
 
 build:
 	go build -o bin/$(BINARY) ./cmd/server
@@ -27,19 +27,6 @@ lint:
 
 fmt:
 	gofmt -s -w .
-
-mock:
-	go get go.uber.org/mock/mockgen@v0.6.0
-	go run go.uber.org/mock/mockgen@v0.6.0 \
-		-source=internal/domain/service/interfaces.go \
-		-destination=internal/usecase/mocks/mocks.go \
-		-package=mocks
-
-migrate-up:
-	goose -dir migrations postgres "$(POSTGRES_DSN)" up
-
-migrate-down:
-	goose -dir migrations postgres "$(POSTGRES_DSN)" down
 
 docker-build:
 	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
