@@ -1,0 +1,177 @@
+{
+  "title": "Gateway Service",
+  "uid": "gateway-service",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "1. HTTP RED",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(gateway_http_requests_total[1m]))",
+          "legendFormat": "req/s"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "5xx Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(gateway_http_requests_total{status=~\"5..\"}[1m]))",
+          "legendFormat": "5xx/s"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Latency p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(gateway_http_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(gateway_http_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(gateway_http_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "2. Rate Limit",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "id": 11,
+      "title": "Rate Limit — Allowed vs Rejected vs Error",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(gateway_events_total{event=\"ratelimit_allowed\"}[1m])",
+          "legendFormat": "allowed/s"
+        },
+        {
+          "expr": "rate(gateway_events_total{event=\"ratelimit_rejected\"}[1m])",
+          "legendFormat": "rejected/s"
+        },
+        {
+          "expr": "rate(gateway_events_total{event=\"ratelimit_error\"}[1m])",
+          "legendFormat": "redis_error/s"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "3. Upstream Routing",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }
+    },
+    {
+      "id": 21,
+      "title": "Requests per Upstream (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(gateway_upstream_requests_total[1m])",
+          "legendFormat": "{{upstream}}"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "title": "4. Least Connections — Active Conns per Instance",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 }
+    },
+    {
+      "id": 31,
+      "title": "Active Connections per Instance",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "gateway_balancer_active_conns",
+          "legendFormat": "{{upstream}} {{addr}}"
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "title": "5. Instance Health",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "id": 41,
+      "title": "Instance Health Status",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "gateway_instance_healthy",
+          "legendFormat": "{{upstream}} {{addr}}",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        { "id": "labelsToFields", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": { "Value": "healthy (1=ok, 0=down)" }
+          }
+        }
+      ],
+      "alert": {
+        "name": "All instances of upstream unhealthy",
+        "conditions": [
+          {
+            "type": "query",
+            "query": { "params": ["A", "1m", "now"] },
+            "reducer": { "type": "max" },
+            "evaluator": { "type": "lt", "params": [1] }
+          }
+        ],
+        "frequency": "30s",
+        "handler": 1,
+        "message": "All instances of an upstream service are unhealthy!"
+      }
+    }
+  ]
+}
