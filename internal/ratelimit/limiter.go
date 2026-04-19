@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"time"
 
 	"gateway-service/internal/config"
@@ -14,101 +13,87 @@ import (
 )
 
 type Limiter struct {
-	client     *redis.Client
-	capacity   float64       // ёмкость бакета
-	ratePerSec float64       // скорость утечки
-	window     time.Duration // для вычисления TTL и RetryAfter
-	enabled    bool
+	client   *redis.Client
+	rateMs   int64 // скорость утечки
+	burstMs  int64 // для вычисления TTL и RetryAfter
+	ttl      time.Duration
+	capacity int64 // ёмкость бакета
+	enabled  bool
 }
 
 func NewLimiter(client *redis.Client, cfg config.RateLimitConfig) *Limiter {
-	capacity := float64(cfg.Requests)
-	ratePerSec := capacity / cfg.Window.Seconds()
+	windowMs := cfg.Window.Milliseconds()
 	return &Limiter{
-		client:     client,
-		capacity:   capacity,
-		ratePerSec: ratePerSec,
-		window:     cfg.Window,
-		enabled:    cfg.Enabled,
+		client:   client,
+		rateMs:   windowMs / cfg.Requests,
+		burstMs:  windowMs,
+		ttl:      cfg.Window * 2,
+		capacity: cfg.Requests,
+		enabled:  cfg.Enabled,
 	}
 }
 
 func (l *Limiter) Allow(ctx context.Context, ip string) (bool, int64, error) {
 	if !l.enabled {
-		return true, int64(l.capacity), nil
+		return true, l.capacity, nil
 	}
 
 	k := l.key(ip)
-	now := time.Now()
+	var allowed bool
+	var remaining int64
 
-	var count float64
-	var lastTime time.Time
+	err := l.client.Watch(ctx, func(tx *redis.Tx) error {
+		nowMs := time.Now().UnixMilli()
 
-	val, err := l.client.Get(ctx, k).Result()
-	switch {
-	case err == redis.Nil:
-		count = 0
-		lastTime = now
-	case err != nil:
-		return true, 0, fmt.Errorf("redis GET %q: %w", k, err)
-	default:
-		count, lastTime, err = parseBucket(val)
-		if err != nil {
-			count = 0
-			lastTime = now
+		tatOld := nowMs
+		val, err := tx.Get(ctx, k).Result()
+		switch {
+		case err == redis.Nil:
+		case err != nil:
+			return err
+		default:
+			tatOld, err = strconv.ParseInt(val, 10, 64)
+			if err != nil {
+				tatOld = nowMs
+			}
 		}
-	}
 
-	elapsed := now.Sub(lastTime).Seconds()
-	leaked := elapsed * l.ratePerSec
-	count = math.Max(0, count-leaked)
+		tatNew := max64(nowMs, tatOld) + l.rateMs
 
-	if count >= l.capacity {
-		return false, 0, nil
-	}
+		if tatNew-nowMs > l.burstMs {
+			allowed = false
+			remaining = 0
+			return nil
+		}
 
-	count++
-	remaining := int64(math.Max(0, l.capacity-count))
+		remaining = int64(math.Max(0, float64(l.burstMs-(tatNew-nowMs))/float64(l.rateMs)))
 
-	ttl := time.Duration(l.capacity/l.ratePerSec*float64(time.Second)) + time.Second
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Set(ctx, k, strconv.FormatInt(tatNew, 10), l.ttl)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 
-	if err := l.client.Set(ctx, k, formatBucket(count, now), ttl).Err(); err != nil {
-		return true, remaining, fmt.Errorf("redis SET %q: %w", k, err)
-	}
+		allowed = true
+		return nil
+	}, k)
 
-	return true, remaining, nil
-}
-
-func (l *Limiter) RetryAfter() int64 {
-	secs := 1.0 / l.ratePerSec
-	return int64(math.Ceil(secs))
-}
-
-func (l *Limiter) Limit() int64 { return int64(l.capacity) }
-
-func (l *Limiter) key(ip string) string {
-	return fmt.Sprintf("leaky:%s", ip)
-}
-
-func formatBucket(count float64, t time.Time) string {
-	return fmt.Sprintf("%s:%d",
-		strconv.FormatFloat(count, 'f', 6, 64),
-		t.UnixMilli(),
-	)
-}
-
-func parseBucket(val string) (float64, time.Time, error) {
-	parts := strings.SplitN(val, ":", 2)
-	if len(parts) != 2 {
-		return 0, time.Time{}, fmt.Errorf("invalid bucket format: %q", val)
-	}
-	count, err := strconv.ParseFloat(parts[0], 64)
 	if err != nil {
-		return 0, time.Time{}, fmt.Errorf("parse count: %w", err)
+		return true, 0, fmt.Errorf("redis watch %q: %w", k, err)
 	}
-	ms, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		return 0, time.Time{}, fmt.Errorf("parse timestamp: %w", err)
+
+	return allowed, remaining, nil
+}
+
+func (l *Limiter) RetryAfter() int64    { return l.rateMs / 1000 }
+func (l *Limiter) Limit() int64         { return l.capacity }
+func (l *Limiter) key(ip string) string { return fmt.Sprintf("gcra:%s", ip) }
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
 	}
-	return count, time.UnixMilli(ms), nil
+	return b
 }

@@ -137,25 +137,45 @@ gateway_instance_healthy               {upstream, addr}  - gauge 1=healthy, 0=un
 
 ### Алгоритм
 
-Бакет ёмкостью `capacity` вытекает с постоянной скоростью `rate = capacity / window`. Состояние хранится в Redis одной строкой:
-
+GCRA (Generic Cell Rate Algorithm) хранит в Redis одно целое число - **TAT** (Theoretical Arrival Time): момент времени, когда бакет был бы полностью пуст при отсутствии новых запросов.
+ 
 ```
-"leaky:{ip}" - "{count}:{unix_milli}"
+"gcra:{ip}" - unix_milli (int64)
+ 
+rateMs  = window_ms / capacity   // мс между токенами
+burstMs = window_ms              // максимальное расстояние TAT от now
 ```
-
+ 
 При каждом запросе:
-
+ 
 ```
-1. GET ключ - (count, last_ts)
-2. leaked = (now - last_ts).Seconds() * rate_per_sec
-3. count  = max(0, count - leaked)   // вытечка
-4. if count >= capacity - 429
-5. count++ - SET ключ EX capacity/rate
+1. GET ключ - tatOld (или now, если ключа нет)
+2. tatNew = max(now, tatOld) + rateMs
+3. if tatNew - now > burstMs - 429
+4. SET ключ tatNew EX ttl
+5. remaining = (burstMs - (tatNew - now)) / rateMs
 ```
-
-### Почему Leaky Bucket
-
-Leaky Bucket гарантирует равномерный выходной поток - независимо от бурста входящих запросов скорость обработки ограничена сверху. Это лучше Sliding Window при сценариях с кратковременными пиками: бакет амортизирует их вместо жёсткого отрезания.
+ 
+### Почему GCRA
+ 
+Вся арифметика целочисленная (миллисекунды) - нет float-дрейфа. Leaky Bucket с `float64` давал ошибку: полный бакет `count=3.0` после минимальной утечки читался как `2.999995 < 3.0` и пропускал лишний запрос. GCRA лишён этой проблемы по конструкции.
+ 
+Как и Leaky Bucket, GCRA гарантирует равномерный поток: бакет амортизирует кратковременные пики вместо жёсткого отрезания на стыке окон (как Fixed Window).
+ 
+### Атомарность - WATCH + TxPipeline
+ 
+GET и SET не атомарны сами по себе. Атомарность обеспечивается через оптимистичную блокировку:
+ 
+```
+WATCH key          // начинаем наблюдать
+GET key            // читаем TAT
+... считаем tatNew ...
+MULTI              // TxPipelined
+SET key tatNew     //
+EXEC               // если key изменился - nil - go-redis повторяет колбек
+```
+ 
+Если между `WATCH` и `EXEC` другой запрос изменил ключ - транзакция отменяется и `go-redis` автоматически повторяет весь колбек. Lua не нужен.
 
 ### Fail Open
 
