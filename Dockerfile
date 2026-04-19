@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.26.2-alpine AS builder
 
 WORKDIR /app
 
@@ -7,10 +7,9 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-s -w" -o /gateway-service ./cmd/server
+RUN go build -o /gateway-service ./cmd/server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM istio/distroless
 
 COPY --from=builder /gateway-service /gateway-service
 
