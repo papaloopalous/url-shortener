@@ -12,7 +12,7 @@ import (
 
 type Client struct {
 	conn   *grpc.ClientConn
-	client authpb.AuthClient
+	client authpb.AuthServiceClient
 }
 
 type AuthClient interface {
@@ -26,12 +26,12 @@ func NewClient(addr string) (*Client, error) {
 	}
 	return &Client{
 		conn:   conn,
-		client: authpb.NewAuthClient(conn),
+		client: authpb.NewAuthServiceClient(conn),
 	}, nil
 }
 
 func (c *Client) ValidateToken(ctx context.Context, token string) (string, error) {
-	resp, err := c.client.ValidateToken(ctx, &authpb.ValidateTokenRequest{Token: token})
+	resp, err := c.client.ValidateToken(ctx, &authpb.ValidateTokenRequest{AccessToken: token})
 	if err != nil {
 		return "", fmt.Errorf("validate token: %w", err)
 	}
