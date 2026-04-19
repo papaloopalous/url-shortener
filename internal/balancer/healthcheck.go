@@ -77,7 +77,7 @@ func (hc *HealthChecker) check(ctx context.Context, inst *instance) {
 		hc.transition(inst, false, err.Error())
 		return
 	}
-	resp.Body.Close()
+	resp.Body.Close() //nolint:errcheck
 
 	hc.transition(inst, resp.StatusCode == http.StatusOK, fmt.Sprintf("status %d", resp.StatusCode))
 }

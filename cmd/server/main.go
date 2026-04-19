@@ -65,13 +65,21 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("redis: %w", err)
 	}
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Error("redis shutdown", "err", err)
+		}
+	}()
 
 	authClient, err := auth.NewClient(cfg.Auth.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("auth grpc client: %w", err)
 	}
-	defer authClient.Close()
+	defer func() {
+		if err := authClient.Close(); err != nil {
+			log.Error("redis shutdown", "err", err)
+		}
+	}()
 
 	limiter := ratelimit.NewLimiter(redisClient, cfg.RateLimit)
 
