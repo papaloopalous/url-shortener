@@ -1,5 +1,6 @@
 services:
   gateway-service:
+    image: papaloopalous/gateway-service:latest
     build: .
     ports:
       - "8080:8080"
