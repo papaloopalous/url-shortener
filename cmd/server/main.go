@@ -83,7 +83,7 @@ func run() error {
 	if err := goose.Up(db, "migrations"); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
-	db.Close()
+	db.Close() //nolint:errcheck
 	log.Info("migrations applied")
 
 	redisClient, err := redisclient.NewClient(ctx, redisclient.Config{
@@ -94,11 +94,19 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("redis client: %w", err)
 	}
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Error("redis shutdown", "err", err)
+		}
+	}()
 	log.Info("redis connected")
 
 	producer := kafka.NewProducer(cfg.Kafka.Brokers)
-	defer producer.Close()
+	defer func() {
+		if err := producer.Close(); err != nil {
+			log.Error("producer shutdown", "err", err)
+		}
+	}()
 	log.Info("kafka producer created", "brokers", cfg.Kafka.Brokers)
 
 	authClient, err := grpcadapter.NewAuthGRPCClient(cfg.Auth.GRPCAddr)
