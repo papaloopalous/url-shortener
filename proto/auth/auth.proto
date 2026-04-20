@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "auth-service/proto/auth";
+
+service AuthService {
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+}
+
+message ValidateTokenRequest {
+  string access_token = 1;
+}
+
+message ValidateTokenResponse {
+  string user_id    = 1;
+  string jti        = 2;
+  int64  expires_at = 3; // unix timestamp
+}
