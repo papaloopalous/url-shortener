@@ -1,6 +1,7 @@
 services:
 
   auth:
+    image: papaloopalous/auth-service:latest
     build:
       context: .
       dockerfile: Dockerfile

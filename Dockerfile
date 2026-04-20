@@ -1,25 +1,21 @@
-FROM golang:1.25-alpine AS builder
-
-RUN apk add --no-cache git ca-certificates tzdata
+FROM golang:1.26.2-alpine AS builder
 
 WORKDIR /app
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-ARG VERSION=dev
-ARG COMMIT=unknown
+RUN go build -o /app/auth-service ./cmd/server
 
-RUN go build -o /bin/auth-service ./cmd/server
+FROM istio/distroless
 
-FROM istio/distroless AS runtime
+WORKDIR /app
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /bin/auth-service /auth-service
-COPY --from=builder /app/migrations /migrations
+COPY --from=builder /app/auth-service .
+COPY --from=builder /app/migrations ./migrations
 
-EXPOSE 8081 9091
+EXPOSE 8083
 
-ENTRYPOINT ["/auth-service"]
+ENTRYPOINT ["/app/auth-service"]

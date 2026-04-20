@@ -1,5 +1,5 @@
 BINARY       := auth-service
-DOCKER_IMAGE := yourname/auth-service
+DOCKER_IMAGE := papaloopalous/auth-service
 DOCKER_TAG   ?= latest
 PROTO_SRC    := proto/auth/auth.proto
 
