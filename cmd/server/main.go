@@ -84,16 +84,22 @@ func main() {
 		log.Error("connect redis", "err", err)
 		os.Exit(1)
 	}
-	defer rdb.Close()
-
-	// ── Migrations ───────────────────────────────────────────────────────────
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			log.Error("redis shutdown", "err", err)
+		}
+	}()
 
 	sqlDB, err := sql.Open("pgx", cfg.PG.DSN)
 	if err != nil {
 		log.Error("open db for migrations", "err", err)
 		os.Exit(1)
 	}
-	defer sqlDB.Close()
+	defer func() {
+		if err := sqlDB.Close(); err != nil {
+			log.Error("sql shutdown", "err", err)
+		}
+	}()
 
 	if err := goose.SetDialect("postgres"); err != nil {
 		log.Error("goose dialect", "err", err)
