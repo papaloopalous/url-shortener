@@ -1,5 +1,6 @@
 services:
   shortener-service:
+    image: papaloopalous/shortener-service:latest
     build:
       context: .
       dockerfile: Dockerfile

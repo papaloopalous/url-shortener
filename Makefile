@@ -1,5 +1,5 @@
 BINARY       := shortener-service
-DOCKER_IMAGE := yourname/shortener-service
+DOCKER_IMAGE := papaloopalous/shortener-service
 DOCKER_TAG   ?= latest
 PROTO_SRC    := proto/auth/auth.proto
 

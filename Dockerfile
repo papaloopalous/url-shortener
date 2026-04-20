@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.2-alpine AS builder
 
 WORKDIR /app
 
@@ -7,18 +7,15 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags="-w -s" \
-    -o /app/shortener-service \
-    ./cmd/server
+RUN go build -o /app/shortener-service ./cmd/server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM istio/distroless
 
 WORKDIR /app
 
 COPY --from=builder /app/shortener-service .
 COPY --from=builder /app/migrations ./migrations
 
-EXPOSE 8082
+EXPOSE 8083
 
 ENTRYPOINT ["/app/shortener-service"]
