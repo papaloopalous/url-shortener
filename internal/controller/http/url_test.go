@@ -139,6 +139,7 @@ func TestRedirect_302(t *testing.T) {
 		ExpiresAt: &expires,
 	}
 	cache.EXPECT().Get(gomock.Any(), "abc1234").Return(url, nil)
+	outbox.EXPECT().AppendEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	auth := &fakeAuthClient{}
 	router := setupRouter(ctrl, urlRepo, outbox, cache, auth)
@@ -153,6 +154,7 @@ func TestRedirect_302(t *testing.T) {
 	if loc := rw.Header().Get("Location"); loc != "https://example.com/long" {
 		t.Errorf("unexpected Location: %s", loc)
 	}
+	time.Sleep(10 * time.Millisecond)
 }
 
 func TestRedirect_404(t *testing.T) {
@@ -220,6 +222,7 @@ func TestBatchDelete_200(t *testing.T) {
 
 	urlRepo.EXPECT().SoftDeleteBatch(gomock.Any(), codes, userID).Return(int64(2), nil)
 	cache.EXPECT().DeleteBatch(gomock.Any(), codes).Return(nil)
+	outbox.EXPECT().AppendEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	auth := &fakeAuthClient{userID: userID.String()}
 	router := setupRouter(ctrl, urlRepo, outbox, cache, auth)
@@ -243,6 +246,7 @@ func TestBatchDelete_200(t *testing.T) {
 	if resp.Deleted != 2 {
 		t.Errorf("want deleted=2, got %d", resp.Deleted)
 	}
+	time.Sleep(10 * time.Millisecond)
 }
 
 func TestListURLs_200(t *testing.T) {
