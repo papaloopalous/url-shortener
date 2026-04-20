@@ -1,5 +1,6 @@
 services:
   analytics-service:
+    image: papaloopalous/analytics-service:latest
     build:
       context: .
       dockerfile: Dockerfile
