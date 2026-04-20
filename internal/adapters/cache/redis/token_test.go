@@ -3,6 +3,7 @@
 package redis_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -20,19 +21,20 @@ func TestMain(m *testing.M) {
 func TestTokenCacheAdapter(t *testing.T) {
 	rdb := testhelpers.MustGetRedis(t)
 	cache := redisadapter.NewTokenCacheAdapter(rdb)
+	ctx := context.Background()
 
 	t.Run("RevokeJTI and IsRevoked returns true", func(t *testing.T) {
 		jti := "test-jti-revoked"
 
-		require.NoError(t, cache.RevokeJTI(jti, time.Minute))
+		require.NoError(t, cache.RevokeJTI(ctx, jti, time.Minute))
 
-		revoked, err := cache.IsRevoked(jti)
+		revoked, err := cache.IsRevoked(ctx, jti)
 		require.NoError(t, err)
 		assert.True(t, revoked)
 	})
 
 	t.Run("IsRevoked returns false for unknown jti", func(t *testing.T) {
-		revoked, err := cache.IsRevoked("not-revoked-jti")
+		revoked, err := cache.IsRevoked(ctx, "not-revoked-jti")
 		require.NoError(t, err)
 		assert.False(t, revoked)
 	})
@@ -40,27 +42,27 @@ func TestTokenCacheAdapter(t *testing.T) {
 	t.Run("key expires after TTL", func(t *testing.T) {
 		jti := "test-jti-expires"
 
-		require.NoError(t, cache.RevokeJTI(jti, 100*time.Millisecond))
+		require.NoError(t, cache.RevokeJTI(ctx, jti, 100*time.Millisecond))
 
-		revoked, err := cache.IsRevoked(jti)
+		revoked, err := cache.IsRevoked(ctx, jti)
 		require.NoError(t, err)
 		assert.True(t, revoked)
 
 		time.Sleep(200 * time.Millisecond)
 
-		revoked, err = cache.IsRevoked(jti)
+		revoked, err = cache.IsRevoked(ctx, jti)
 		require.NoError(t, err)
 		assert.False(t, revoked)
 	})
 
 	t.Run("different jti values are independent", func(t *testing.T) {
-		require.NoError(t, cache.RevokeJTI("jti-a", time.Minute))
+		require.NoError(t, cache.RevokeJTI(ctx, "jti-a", time.Minute))
 
-		revokedA, err := cache.IsRevoked("jti-a")
+		revokedA, err := cache.IsRevoked(ctx, "jti-a")
 		require.NoError(t, err)
 		assert.True(t, revokedA)
 
-		revokedB, err := cache.IsRevoked("jti-b")
+		revokedB, err := cache.IsRevoked(ctx, "jti-b")
 		require.NoError(t, err)
 		assert.False(t, revokedB)
 	})

@@ -21,6 +21,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestUserRepo(t *testing.T) {
+	ctx := context.Background()
 	db := testhelpers.MustGetPool(t)
 	repo := pgadapter.NewUserRepo(db)
 
@@ -33,16 +34,16 @@ func TestUserRepo(t *testing.T) {
 			UpdatedAt:    time.Now(),
 		}
 
-		require.NoError(t, repo.Create(user))
+		require.NoError(t, repo.Create(ctx, user))
 
-		found, err := repo.FindByEmail(user.Email)
+		found, err := repo.FindByEmail(ctx, user.Email)
 		require.NoError(t, err)
 		assert.Equal(t, user.ID, found.ID)
 		assert.Equal(t, user.Email, found.Email)
 	})
 
 	t.Run("FindByEmail not found returns ErrUserNotFound", func(t *testing.T) {
-		_, err := repo.FindByEmail("nobody@nowhere.com")
+		_, err := repo.FindByEmail(ctx, "nobody@nowhere.com")
 		assert.ErrorIs(t, err, entity.ErrUserNotFound)
 	})
 
@@ -54,9 +55,9 @@ func TestUserRepo(t *testing.T) {
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
-		require.NoError(t, repo.Create(user))
+		require.NoError(t, repo.Create(ctx, user))
 
-		found, err := repo.FindByID(user.ID)
+		found, err := repo.FindByID(ctx, user.ID)
 		require.NoError(t, err)
 		assert.Equal(t, user.Email, found.Email)
 	})
@@ -66,12 +67,13 @@ func TestUserRepo(t *testing.T) {
 		u1 := &entity.User{ID: uuid.New(), Email: email, PasswordHash: "h", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 		u2 := &entity.User{ID: uuid.New(), Email: email, PasswordHash: "h", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 
-		require.NoError(t, repo.Create(u1))
-		assert.Error(t, repo.Create(u2))
+		require.NoError(t, repo.Create(ctx, u1))
+		assert.Error(t, repo.Create(ctx, u2))
 	})
 }
 
 func TestSessionRepo(t *testing.T) {
+	ctx := context.Background()
 	db := testhelpers.MustGetPool(t)
 	userRepo := pgadapter.NewUserRepo(db)
 	sessRepo := pgadapter.NewSessionRepo(db)
@@ -85,7 +87,7 @@ func TestSessionRepo(t *testing.T) {
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
-		require.NoError(t, userRepo.Create(u))
+		require.NoError(t, userRepo.Create(ctx, u))
 		return u
 	}
 
@@ -101,9 +103,9 @@ func TestSessionRepo(t *testing.T) {
 			ExpiresAt: time.Now().Add(24 * time.Hour),
 		}
 
-		require.NoError(t, sessRepo.Create(sess))
+		require.NoError(t, sessRepo.Create(ctx, sess))
 
-		found, err := sessRepo.FindByTokenHash(sess.TokenHash)
+		found, err := sessRepo.FindByTokenHash(ctx, sess.TokenHash)
 		require.NoError(t, err)
 		assert.Equal(t, sess.ID, found.ID)
 		assert.Equal(t, sess.UserID, found.UserID)
@@ -111,7 +113,7 @@ func TestSessionRepo(t *testing.T) {
 	})
 
 	t.Run("FindByTokenHash not found", func(t *testing.T) {
-		_, err := sessRepo.FindByTokenHash("nonexistent-hash")
+		_, err := sessRepo.FindByTokenHash(ctx, "nonexistent-hash")
 		assert.ErrorIs(t, err, entity.ErrSessionNotFound)
 	})
 
@@ -126,10 +128,10 @@ func TestSessionRepo(t *testing.T) {
 			CreatedAt: time.Now(),
 			ExpiresAt: time.Now().Add(time.Hour),
 		}
-		require.NoError(t, sessRepo.Create(sess))
-		require.NoError(t, sessRepo.RevokeByID(sess.ID))
+		require.NoError(t, sessRepo.Create(ctx, sess))
+		require.NoError(t, sessRepo.RevokeByID(ctx, sess.ID))
 
-		found, err := sessRepo.FindByTokenHash(sess.TokenHash)
+		found, err := sessRepo.FindByTokenHash(ctx, sess.TokenHash)
 		require.NoError(t, err)
 		assert.NotNil(t, found.RevokedAt)
 	})
@@ -145,10 +147,10 @@ func TestSessionRepo(t *testing.T) {
 			CreatedAt: time.Now(),
 			ExpiresAt: time.Now().Add(time.Hour),
 		}
-		require.NoError(t, sessRepo.Create(sess))
-		require.NoError(t, sessRepo.RevokeByID(sess.ID))
+		require.NoError(t, sessRepo.Create(ctx, sess))
+		require.NoError(t, sessRepo.RevokeByID(ctx, sess.ID))
 
-		err := sessRepo.RevokeByID(sess.ID)
+		err := sessRepo.RevokeByID(ctx, sess.ID)
 		assert.ErrorIs(t, err, entity.ErrSessionNotFound)
 	})
 
@@ -167,13 +169,13 @@ func TestSessionRepo(t *testing.T) {
 				CreatedAt: time.Now(),
 				ExpiresAt: time.Now().Add(time.Hour),
 			}
-			require.NoError(t, sessRepo.Create(s))
+			require.NoError(t, sessRepo.Create(ctx, s))
 		}
 
-		require.NoError(t, sessRepo.RevokeAllByUserID(user.ID))
+		require.NoError(t, sessRepo.RevokeAllByUserID(ctx, user.ID))
 
 		for _, h := range []string{hash1, hash2} {
-			found, err := sessRepo.FindByTokenHash(h)
+			found, err := sessRepo.FindByTokenHash(ctx, h)
 			require.NoError(t, err)
 			assert.NotNil(t, found.RevokedAt, "session %s should be revoked", h)
 		}
@@ -201,21 +203,17 @@ func TestSessionRepo(t *testing.T) {
 			ExpiresAt: time.Now().Add(time.Hour),
 		}
 
-		require.NoError(t, sessRepo.Create(expired))
-		require.NoError(t, sessRepo.Create(active))
+		require.NoError(t, sessRepo.Create(ctx, expired))
+		require.NoError(t, sessRepo.Create(ctx, active))
 
-		deleted, err := sessRepo.DeleteExpired()
+		deleted, err := sessRepo.DeleteExpired(ctx)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, deleted, int64(1))
 
-		_, err = sessRepo.FindByTokenHash(active.TokenHash)
+		_, err = sessRepo.FindByTokenHash(ctx, active.TokenHash)
 		assert.NoError(t, err)
 
-		_, err = sessRepo.FindByTokenHash(expired.TokenHash)
+		_, err = sessRepo.FindByTokenHash(ctx, expired.TokenHash)
 		assert.ErrorIs(t, err, entity.ErrSessionNotFound)
 	})
-}
-
-func init() {
-	_ = context.Background()
 }
