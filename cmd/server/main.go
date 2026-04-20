@@ -82,7 +82,7 @@ func run() error {
 	if err := goose.Up(db, "migrations"); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
-	db.Close()
+	db.Close() //nolint:errcheck
 	log.Info("migrations applied")
 
 	redisClient, err := redisclient.NewClient(ctx, redisclient.Config{
@@ -93,7 +93,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("redis client: %w", err)
 	}
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Error("redis shutdown", "err", err)
+		}
+	}()
+
 	log.Info("redis connected")
 
 	consumer := kafkaadapter.NewConsumer(
@@ -101,7 +106,12 @@ func run() error {
 		cfg.Kafka.ClickEventsTopic,
 		cfg.Kafka.GroupID,
 	)
-	defer consumer.Close()
+	defer func() {
+		if err := consumer.Close(); err != nil {
+			log.Error("consumer shutdown", "err", err)
+		}
+	}()
+
 	log.Info("kafka consumer created",
 		"topic", cfg.Kafka.ClickEventsTopic,
 		"group_id", cfg.Kafka.GroupID,
